@@ -1,0 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch
+torchaudio
+torchvision
+ffmpeg-python
+numpy
+faster-whisper
+transformers
+sentencepiece
+accelerate
+edge-tts
+demucs
+pyannote.audio
+streamlit
+yt-dlp

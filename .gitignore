@@ -1,0 +1,36 @@
+# Python / Virtual Environment
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# PyTorch / Models Cache
+.cache/
+torch_cache/
+tts_cache/
+scratch/
+models/*
+!models/.gitkeep
+
+# Project Temporary & Output Folders
+temp/
+input/*.mp4
+input/*.mkv
+input/*.mov
+input/*.avi
+output/*
+!output/.gitkeep
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
