@@ -1,4 +1,4 @@
-# 🎙️ EchoLocal: Open-Source AI Video Dubbing, Multi-Speaker Voice Cloning & Lip-Sync Pipeline
+<!-- # 🎙️ EchoLocal: Open-Source AI Video Dubbing, Multi-Speaker Voice Cloning & Lip-Sync Pipeline
 
 [![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%2Bcu124-orange.svg)](https://pytorch.org/)
@@ -225,4 +225,324 @@ Contributions are welcome! Please feel free to submit a Pull Request or open an 
 
 ## 📜 License
 
-This project is open-source under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is open-source under the **MIT License**. See the [LICENSE](LICENSE) file for details. -->
+
+
+
+
+
+
+
+<div align="center">
+
+# 🎙️ EchoLocal
+
+### Local-first AI video dubbing, speaker-aware voice cloning, and lip synchronization
+
+Translate dialogue between **Hindi ↔ English**, generate dubbed speech, preserve the original soundtrack, and export subtitles and a finished video from a local file or a supported YouTube URL.
+
+<p>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.13-3776AB?logo=python&logoColor=white" alt="Python versions" /></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.6%2B-EE4C2C?logo=pytorch&logoColor=white" alt="PyTorch" /></a>
+  <a href="https://streamlit.io/"><img src="https://img.shields.io/badge/Interface-Streamlit-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit" /></a>
+  <img src="https://img.shields.io/badge/AI-Voice%20Cloning-7C3AED" alt="Voice cloning" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-2EA44F.svg" alt="MIT License" /></a>
+</p>
+
+</div>
+
+---
+
+## 📌 Table of contents
+
+- [What is EchoLocal?](#-what-is-echolocal)
+- [Features](#-features)
+- [How it works](#-how-it-works)
+- [Technology stack](#-technology-stack)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Run EchoLocal](#-run-echolocal)
+- [Output files](#-output-files)
+- [Project structure](#-project-structure)
+- [Troubleshooting](#-troubleshooting)
+- [Responsible use](#-responsible-use)
+- [Contributing](#-contributing)
+- [License](#-license)
+
+## 🎯 What is EchoLocal?
+
+**EchoLocal** is an open-source video localization pipeline that turns a video's dialogue into a Hindi or English dub while keeping the video's broader audio context. It combines speech recognition, speaker diarization, translation, voice cloning, subtitle generation, audio mixing, and optional lip synchronization into one workflow.
+
+The project is designed to manage GPU memory carefully, including sequential model use and VRAM cleanup. Its target setup includes NVIDIA GPUs with around **6 GB of VRAM**, such as an RTX 3050; actual speed and memory use depend on the input, models, and enabled features.
+
+## ✨ Features
+
+| Capability | What it does |
+|---|---|
+| 🎬 **Video input** | Process a local video or download a supported YouTube video/Short using `yt-dlp` (up to 1080p as configured). |
+| 🎵 **Voice/background separation** | Uses Demucs `htdemucs` to separate speech vocals from background music and sound effects. |
+| 📝 **Speech recognition** | Uses `faster-whisper` to produce a transcript with timestamps. |
+| 👥 **Speaker diarization** | Uses Pyannote Audio 3.1 when available, with a Librosa MFCC/pitch feature-clustering fallback. The fallback is an estimate, not a guarantee of perfect speaker separation. |
+| 🌐 **Hindi ↔ English translation** | Uses Helsinki-NLP translation models and/or NLLB-200, followed by conversational adaptation post-processing. |
+| 🗣️ **Speaker-aware voice cloning** | Uses Coqui XTTS-v2 with approximately 6–10 seconds of clean reference speech per speaker; an Edge-TTS fallback is included. |
+| 🎚️ **Audio finishing** | Normalizes generated segments toward `-16 LUFS`, applies 75 ms crossfades, adjusts segment speed, and mixes the original background track with ducking. |
+| 📜 **Subtitle generation** | Exports original-language, translated, and stacked bilingual `.srt` subtitles. |
+| 💋 **Lip synchronization** | Uses Wav2Lip in 10-second chunks; disable this step for a faster preview with `--skip-lipsync`. |
+| 🖥️ **Web UI and CLI** | Run the Streamlit interface, process a single file, download/process a YouTube URL, or run a directory batch. |
+| ⚡ **GPU memory management** | Includes CUDA checks, VRAM cleanup, FFmpeg detection, and handling for out-of-memory errors. |
+
+> **Scope:** The documented translation workflow is Hindi ↔ English. Results vary with recording quality, background noise, overlapping speech, translation context, and voice-reference quality.
+
+## 🔄 How it works
+
+```mermaid
+flowchart TD
+    A[Local video or YouTube URL] --> B[Download video if needed]
+    B --> C[Extract audio with FFmpeg]
+    C --> D[Demucs: separate vocals and background]
+    D --> E[Transcribe speech with faster-whisper]
+    E --> F[Identify speaker turns]
+    F --> G[Translate Hindi ↔ English]
+    G --> H[Generate original, translated, and bilingual subtitles]
+    G --> I[Generate speaker-aware dubbed speech with XTTS-v2]
+    D --> J[Keep original background music and SFX]
+    I --> K[Normalize, time-fit, crossfade, and mix audio]
+    J --> K
+    K --> L{Lip-sync enabled?}
+    L -->|Yes| M[Wav2Lip synchronization]
+    L -->|No| N[Skip lip-sync]
+    M --> O[Final dubbed MP4]
+    N --> O
+    H --> P[Subtitle and transcript files]
+```
+
+### Pipeline stages
+
+1. **Prepare media:** Download the source when using a YouTube URL, then extract mono 16 kHz audio.
+2. **Separate and understand speech:** Demucs separates vocals from background audio; `faster-whisper` transcribes speech and the diarization module labels speaker turns.
+3. **Translate and subtitle:** Translate the transcript and create timestamped `.srt` files in the available subtitle formats.
+4. **Create the dub:** Generate speech with the selected TTS path, then normalize and time-fit audio segments.
+5. **Rebuild the video:** Mix dubbed speech with the original background track, then optionally run Wav2Lip before saving the final video.
+
+## 🧰 Technology stack
+
+| Component | Technology | Role |
+|---|---|---|
+| Video download | `yt-dlp` | Retrieves supported YouTube sources. |
+| Media processing | FFmpeg | Extracts audio, applies audio filters, and muxes video/audio. |
+| Audio separation | Demucs `htdemucs` | Separates vocals and background audio. |
+| Speech-to-text | `faster-whisper` / CTranslate2 | Produces transcript text and timestamps. |
+| Speaker diarization | Pyannote Audio 3.1; Librosa + KMeans fallback | Estimates who spoke when. |
+| Translation | Helsinki-NLP MarianMT; NLLB-200 | Translates dialogue between Hindi and English. |
+| Text-to-speech | Coqui XTTS-v2; Edge-TTS fallback | Generates dubbed speech using speaker reference audio when supported by the active path. |
+| Lip synchronization | Wav2Lip | Aligns mouth movements to the dubbed audio. |
+| User interface | Streamlit | Provides an interactive browser-based interface. |
+| GPU runtime | PyTorch / CUDA | Accelerates compatible workloads on NVIDIA GPUs. |
+
+## 💻 Requirements
+
+- **Operating system:** Windows 10/11 or Linux.
+- **Python:** 3.10, 3.11, or 3.13, as specified by this project's current setup. Dependency compatibility can vary by Python version.
+- **GPU:** NVIDIA GPU with 6 GB or more of VRAM is the target configuration. Model availability and performance depend on your hardware and installed PyTorch/CUDA build.
+- **FFmpeg:** Install FFmpeg and make sure `ffmpeg` is available on your `PATH`. The project may also look in `C:\ffmpeg\` on Windows.
+- **Git:** Required to clone the repository.
+- **Disk space and internet:** Allow room for Python packages, model weights, temporary audio segments, and generated videos. Internet is needed to clone the repository and may be needed to download video sources or model assets.
+
+## 📦 Installation
+
+### 1. Clone the repository
+
+Replace `YOUR_USERNAME` and `YOUR_REPOSITORY` with the owner and repository name from your GitHub URL before running these commands.
+
+```bash
+git clone https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
+cd YOUR_REPOSITORY
+```
+
+### 2. Create and activate a virtual environment
+
+**Windows PowerShell**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, use a terminal where script activation is permitted or follow your system's Python environment policy.
+
+**Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+The project requirements are intended to install the required Python dependencies, including the configured PyTorch/CUDA stack. Follow the PyTorch installation guidance if your installed environment does not detect your NVIDIA GPU.
+
+### 4. Verify GPU availability
+
+```bash
+python test_gpu.py
+```
+
+The script should report whether CUDA is available and, when detected, the GPU name. For example, a compatible setup may report an NVIDIA GeForce RTX 3050 Laptop GPU. Your output will reflect your own hardware and installation.
+
+## 🚀 Run EchoLocal
+
+### Option A — Streamlit web interface
+
+This is the recommended way to explore the available controls.
+
+```bash
+streamlit run app.py
+```
+
+Open **http://localhost:8501** in your browser. In the interface:
+
+1. Choose a local video or a YouTube URL.
+2. Select the source and target languages.
+3. Configure available options such as voice cloning, background music, and lip synchronization.
+4. Start the pipeline, then preview or download the generated results.
+
+### Option B — Process a local video
+
+```bash
+python run_pipeline.py --video input/sample_video.mp4
+```
+
+Replace `input/sample_video.mp4` with the path to your video.
+
+### Option C — Download and process a YouTube URL
+
+```bash
+python run_pipeline.py --youtube-url "https://www.youtube.com/watch?v=dQw4w9WgXcQ" --max-height 1080
+```
+
+Replace the example URL with a video you are allowed to access and process. Download availability depends on YouTube and `yt-dlp` support.
+
+### Option D — Skip lip synchronization for a faster preview
+
+```bash
+python run_pipeline.py --video input/sample_video.mp4 --skip-lipsync
+```
+
+This bypasses the Wav2Lip stage; the resulting video will not have the lip-sync adjustment from that stage.
+
+### Option E — Batch-process a directory
+
+Place the videos you want to process in a directory, then run:
+
+```bash
+python run_pipeline.py --batch-dir input/
+```
+
+## 📄 Output files
+
+Generated artifacts are saved under `output/` according to the source name and pipeline configuration.
+
+| Artifact | Typical path | Description |
+|---|---|---|
+| 🎥 Dubbed video | `output/<video_name>_dubbed.mp4` | Final video with the generated dub; lip synchronization depends on whether that stage is enabled. |
+| 📝 Original subtitles | `output/<video_name>_original.srt` | Timestamped subtitles in the source language. |
+| 🌐 Translated subtitles | `output/<video_name>_translated.srt` | Timestamped subtitles in the target language. |
+| 🌍 Bilingual subtitles | `output/<video_name>_bilingual.srt` | Stacked source-language and target-language subtitles. |
+| 📊 Transcript data | `output/vocals_diarized_translated.json` | Structured diarized and translated transcript data. |
+
+Intermediate files such as extracted audio, separated tracks, and TTS segments are kept under `temp/` and related working directories during processing.
+
+## 🗂️ Project structure
+
+```text
+EchoLocal/
+├── app.py                       # Streamlit web interface
+├── run_pipeline.py              # Single-video and batch CLI orchestration
+├── test_gpu.py                  # GPU/CUDA verification
+├── requirements.txt             # Python dependencies
+├── README.md                    # Project documentation
+├── LICENSE                      # Project license
+├── .streamlit/
+│   └── config.toml               # Streamlit configuration
+├── input/                        # Input videos
+├── output/                       # Final videos, subtitles, and transcript files
+├── temp/                         # Intermediate audio and TTS segments
+└── src/
+    ├── download_youtube.py       # YouTube source download
+    ├── extract_audio.py          # FFmpeg audio extraction
+    ├── separate_audio.py         # Demucs vocal/background separation
+    ├── transcribe.py             # Speech recognition
+    ├── diarize.py                # Speaker diarization and fallback clustering
+    ├── translate.py              # Hindi-English translation and adaptation
+    ├── generate_subtitles.py     # SRT subtitle generation
+    ├── voice_clone_tts.py        # Voice-cloned speech generation
+    ├── merge_final.py            # Timing, audio mixing, and video muxing
+    ├── lip_sync.py               # Wav2Lip lip synchronization
+    └── gpu_utils.py              # GPU memory and FFmpeg utilities
+```
+
+### Module reference
+
+| Module | Main responsibility |
+|---|---|
+| `src/download_youtube.py` | Downloads supported YouTube videos and sanitizes filenames. |
+| `src/extract_audio.py` | Extracts audio to 16 kHz mono WAV using FFmpeg. |
+| `src/separate_audio.py` | Creates vocal and background tracks using Demucs. |
+| `src/transcribe.py` | Transcribes speech and records timestamps. |
+| `src/diarize.py` | Labels speaker turns with Pyannote or acoustic-feature clustering. |
+| `src/translate.py` | Translates transcript segments and applies conversational adaptation. |
+| `src/generate_subtitles.py` | Generates original, translated, and bilingual SRT files. |
+| `src/voice_clone_tts.py` | Produces the dubbed speech with XTTS-v2 and a fallback TTS path. |
+| `src/merge_final.py` | Fits segment timing, applies crossfades and loudness normalization, and mixes the soundtrack. |
+| `src/lip_sync.py` | Runs chunked lip synchronization with Wav2Lip. |
+| `src/gpu_utils.py` | Handles GPU memory cleanup and FFmpeg discovery utilities. |
+
+## 🛠️ Troubleshooting
+
+### `ffmpeg` is not found
+
+Run `ffmpeg -version` in the same terminal you use to launch EchoLocal. If the command fails, install FFmpeg and add its executable directory to your `PATH` (or place it in the location your local setup expects).
+
+### CUDA is unavailable
+
+Run `python test_gpu.py` and check that your NVIDIA driver and installed PyTorch build support the CUDA environment you intend to use. A PyTorch package that does not match your environment may prevent GPU acceleration from being detected.
+
+### CUDA out-of-memory errors
+
+Close other GPU-intensive applications, try a shorter input, or run a preview with `--skip-lipsync`. The pipeline includes memory-management helpers, but not every model and video will fit within every GPU's available VRAM.
+
+### Speaker labels or dubbing sound incorrect
+
+Speaker diarization, translation, and cloned speech are model-generated estimates. Results are more likely to degrade with overlapping dialogue, noisy recordings, very short speaker turns, or unclear reference audio. Review the output before publishing it.
+
+## 🔐 Responsible use
+
+- Use videos and voice references that you own or have permission to process.
+- Respect the source platform's terms, copyright, privacy, and applicable laws when downloading or transforming media.
+- Disclose AI-generated or voice-cloned content where required and avoid impersonation or misleading use.
+- The MIT license for this repository does not automatically determine the licenses or usage conditions of third-party libraries, checkpoints, or pretrained models. Review their terms separately.
+
+## 🤝 Contributing
+
+Contributions, bug reports, feature requests, and improvements to translation or model support are welcome.
+
+1. Open an issue describing the bug or proposed change.
+2. Include reproducible steps, relevant logs, and your environment details when reporting a bug.
+3. Submit a pull request with a focused change and a clear description of what it improves.
+
+## 📜 License
+
+EchoLocal's project code is distributed under the **MIT License**. See [`LICENSE`](LICENSE) for the full license text. Third-party components and model weights may have separate terms.
+
+---
+
+<div align="center">
+
+**EchoLocal — make video dialogue more accessible across languages.**
+
+</div>
