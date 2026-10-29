@@ -1,0 +1,135 @@
+name: EchoLocal CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# ── Permissions (read-only for security) ─────────────────────────────────────
+permissions:
+  contents: read
+
+jobs:
+  # ── Lint & style ─────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff lint check
+        run: ruff check src/ api/ tests/ --select E,F,W,I --ignore E501
+
+      - name: Ruff format check
+        run: ruff format --check src/ api/ tests/
+
+  # ── Type checking ─────────────────────────────────────────────────────────────
+  typecheck:
+    name: Type Check (pyright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install pyright + stubs
+        run: pip install pyright
+
+      - name: Run pyright
+        run: pyright src/config.py src/logger.py api/server.py
+        continue-on-error: true  # Non-blocking until full type coverage
+
+  # ── Unit tests ────────────────────────────────────────────────────────────────
+  test:
+    name: Unit Tests (pytest)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest pytest-mock pytest-cov
+          # Lightweight stubs for CI (no CUDA/GPU)
+          pip install pydub numpy
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ \
+            -v \
+            --tb=short \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --ignore=tests/test_diarize.py
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ── Security audit ────────────────────────────────────────────────────────────
+  security:
+    name: Security Audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run audit
+        run: pip-audit -r requirements.txt --ignore-vuln GHSA-r9ch-5gc8-84q4
+        continue-on-error: true  # Advisory only — don't fail CI on known issues
+
+  # ── Docker build check ────────────────────────────────────────────────────────
+  docker-build:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: echolocal:ci-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

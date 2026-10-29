@@ -1,0 +1,78 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EchoLocal — Docker Compose
+#
+# Services:
+#   api        FastAPI REST server (port 8000)
+#   streamlit  Streamlit GUI       (port 8501)
+#
+# Usage:
+#   docker-compose up api           # REST API only
+#   docker-compose up streamlit     # GUI only
+#   docker-compose up               # Both
+#
+# GPU requirement: NVIDIA Docker runtime (nvidia-container-toolkit)
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-echolocal-base: &echolocal-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  volumes:
+    # Mount local directories so outputs persist outside the container
+    - ./input:/app/input
+    - ./output:/app/output
+    - ./models:/app/models
+    - ./logs:/app/logs
+  environment:
+    - CUDA_VISIBLE_DEVICES=0
+    - HF_HOME=/app/models
+    - TORCH_HOME=/app/models
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+  restart: unless-stopped
+
+
+services:
+
+  api:
+    <<: *echolocal-base
+    container_name: echolocal-api
+    command: >
+      uvicorn api.server:app
+      --host 0.0.0.0
+      --port 8000
+      --workers 1
+      --log-level info
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  streamlit:
+    <<: *echolocal-base
+    container_name: echolocal-streamlit
+    command: >
+      streamlit run app.py
+      --server.port=8501
+      --server.address=0.0.0.0
+      --server.headless=true
+      --browser.gatherUsageStats=false
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
